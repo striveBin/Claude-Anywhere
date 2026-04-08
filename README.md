@@ -1,15 +1,63 @@
 # Claude Anywhere
 
-一个将 Anthropic `messages` 协议转换为其他模型后端请求格式的代理服务。
+一个面向 Claude Code 的协议转换代理。
 
-这个项目的目标很直接：让 Claude Code 这类依赖 Anthropic 协议的客户端，可以接入 OpenAI-compatible 接口、Gemini，或者直接接入 Anthropic 本身，而不需要修改客户端调用方式。
+Claude Anywhere 的目标，是让依赖 Anthropic `messages` 协议的客户端，能够稳定接入 OpenAI-compatible、Gemini 以及 Anthropic 等不同模型后端，同时尽可能保留 Claude 风格的工具调用体验。
 
-它适合这样的场景：
+它不是一个只做“文本转发”的轻量代理，而是一个把协议兼容、工具链语义、错误边界和后续可维护性放在前面的工程化实现。
 
-- 你想继续使用 Claude Code
-- 你手上的模型并不是 Anthropic 官方模型
-- 你有自己的 OpenAI-compatible 网关、第三方平台或模型聚合平台
-- 你希望尽量保留 Claude 风格的工具调用流程，而不只是做简单文本转发
+## 为什么做这个项目
+
+很多客户端默认围绕 Anthropic 协议设计，尤其是 Claude Code 这类重工具调用场景。问题在于：
+
+- 不同模型后端的协议并不一致
+- 工具调用字段虽然看起来相似，但真实语义并不完全兼容
+- 某些代理方案能跑通普通对话，但在多轮工具调用、流式 tool call、schema 兼容性上容易出问题
+- 当请求不兼容时，静默降级往往比直接报错更难排查
+
+Claude Anywhere 选择的路线是：
+
+- 对可安全转换的能力做显式适配
+- 对不可安全表达的能力明确报错或按策略降级
+- 保持 Claude Code 这类客户端所依赖的工具调用语义
+- 用可拆分的模块结构支撑后续扩展
+
+## 设计理念
+
+这个项目当前围绕四个核心原则设计：
+
+### 1. 以协议语义为中心，而不是只看字段长得像不像
+
+Claude Anywhere 关注的不只是把字段名改掉，而是尽量保留请求和响应在工具调用上的真实语义，包括：
+
+- `tool_use`
+- `tool_result`
+- backend `tool_calls`
+- 多轮工具调用后的继续推理
+
+### 2. 显式兼容性优先于静默降级
+
+对于无法安全表示的能力，默认优先返回明确错误，而不是偷偷吞掉字段或改成普通文本。这样问题更早暴露，也更容易排查。
+
+### 3. 结构化适配而不是单文件堆逻辑
+
+项目按职责拆分为：
+
+- `proxy_core/models.py`：请求/响应模型与模型映射
+- `proxy_core/compatibility.py`：兼容性校验与显式报错
+- `proxy_core/capabilities.py`：后端能力矩阵
+- `proxy_core/conversion.py`：Anthropic <-> LiteLLM 协议转换
+- `proxy_core/streaming.py`：流式响应转换
+- `proxy_core/adapters/`：不同 provider 的 adapter
+
+### 4. 面向 Claude Code 真实使用场景优化
+
+项目优先关注的不是“最少代码跑通一个 demo”，而是这些更真实的问题：
+
+- Claude Code 能否稳定走完工具调用链路
+- 多轮 `tool_result` 后能否继续推理
+- 不同 provider 的边界是否明确
+- 流式和非流式返回是否都能保持 Anthropic 风格
 
 ## 项目能力
 
@@ -19,7 +67,8 @@
 - 将 `haiku`、`sonnet` 等 Claude 模型名映射到你配置的后端模型
 - 在 Anthropic 风格的 `tool_use` / `tool_result` 与后端 function calling 格式之间做转换
 - 支持流式和非流式响应
-- 允许 Claude Code 通过一个本地代理访问 OpenAI-compatible、Gemini 或 Anthropic 后端
+- 支持 provider adapter 结构，便于扩展不同后端
+- 提供显式兼容性检查，而不是把所有问题都留给底层后端报错
 
 ## 当前状态
 
@@ -42,7 +91,7 @@
 
 ```bash
 git clone https://github.com/striveBin/Claude-Anywhere.git
-cd claude-code-proxy-main
+cd Claude-Anywhere
 ```
 
 ### 2. 配置 `.env`
@@ -77,12 +126,23 @@ BIG_MODEL=gemini-2.5-pro
 SMALL_MODEL=gemini-2.5-flash
 ```
 
-直接代理 Anthropic 示例：
+Anthropic 示例：
 
 ```dotenv
 PREFERRED_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your-anthropic-key
 ```
+
+可选配置：
+
+```dotenv
+UNSUPPORTED_THINKING_BEHAVIOR=error
+```
+
+说明：
+
+- `error`：非 Anthropic 后端收到 `thinking` 时直接报错
+- `drop`：自动忽略 `thinking` 并继续请求
 
 ## 安装依赖
 
@@ -109,7 +169,7 @@ uv sync
 #### 1. 进入项目目录
 
 ```powershell
-cd D:\Desktop\claude-code-proxy-main
+cd D:\Desktop\Claude-Anywhere
 ```
 
 #### 2. 准备 `.env`
@@ -120,23 +180,9 @@ cd D:\Desktop\claude-code-proxy-main
 Copy-Item .env.example .env
 ```
 
-然后编辑 `.env`，填入你自己的后端配置。例如 OpenAI-compatible 平台：
-
-```dotenv
-PREFERRED_PROVIDER=openai
-
-OPENAI_API_KEY=your-api-key
-OPENAI_BASE_URL=https://your-openai-compatible-endpoint/v1
-
-BIG_MODEL=your-large-model
-SMALL_MODEL=your-small-model
-```
-
-如果你已经写好了 `.env`，可以跳过这一步。
+然后编辑 `.env`，填入你的后端配置。
 
 #### 3. 安装依赖
-
-如果你已经装过，可以跳过。
 
 ```powershell
 conda create -n claude-proxy python=3.11 -y
@@ -149,29 +195,21 @@ conda run -n claude-proxy python -m pip install fastapi[standard] uvicorn httpx 
 conda run -n claude-proxy python -m uvicorn server:app --host 0.0.0.0 --port 8082
 ```
 
-开发模式可以这样启动：
+开发模式：
 
 ```powershell
 conda run -n claude-proxy python -m uvicorn server:app --host 0.0.0.0 --port 8082 --reload
 ```
 
-#### 5. 验证服务是否启动成功
-
-新开一个 PowerShell 窗口执行：
+#### 5. 验证服务
 
 ```powershell
 Invoke-WebRequest -Uri http://localhost:8082/ -UseBasicParsing
 ```
 
-如果启动成功，你应该看到类似返回：
+#### 6. 连接 Claude Code
 
-```json
-{"message":"Anthropic Proxy for LiteLLM"}
-```
-
-#### 6. 让 Claude Code 连接本地代理
-
-方式 A：当前终端临时指定
+临时方式：
 
 ```powershell
 $env:ANTHROPIC_BASE_URL="http://localhost:8082"
@@ -179,7 +217,7 @@ $env:ANTHROPIC_API_KEY="dummy-key"
 claude
 ```
 
-方式 B：写入 `C:\Users\WINDOWS\.claude\settings.json`
+或者写入 `C:\Users\WINDOWS\.claude\settings.json`：
 
 ```json
 {
@@ -191,18 +229,12 @@ claude
 }
 ```
 
-如果你已经在其他终端里设置过别的 `ANTHROPIC_BASE_URL`，建议先清掉，避免混淆：
-
-```powershell
-Remove-Item Env:ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue
-```
-
 ### 方式二：Linux / macOS
 
 #### 1. 进入项目目录
 
 ```bash
-cd claude-code-proxy-main
+cd Claude-Anywhere
 ```
 
 #### 2. 准备 `.env`
@@ -211,17 +243,13 @@ cd claude-code-proxy-main
 cp .env.example .env
 ```
 
-然后编辑 `.env`。
-
 #### 3. 安装依赖
-
-使用 `uv`：
 
 ```bash
 uv sync
 ```
 
-或使用普通 Python 环境：
+或者：
 
 ```bash
 python -m pip install fastapi[standard] uvicorn httpx pydantic litellm python-dotenv google-auth google-cloud-aiplatform
@@ -251,6 +279,58 @@ curl http://localhost:8082/
 ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY=dummy-key claude
 ```
 
+## 配置说明
+
+### 核心环境变量
+
+- `PREFERRED_PROVIDER`：可选 `openai`、`google`、`anthropic`
+- `OPENAI_API_KEY`：OpenAI-compatible 后端必填
+- `OPENAI_BASE_URL`：自定义 OpenAI-compatible 接口地址
+- `GEMINI_API_KEY`：Gemini API 模式下必填
+- `ANTHROPIC_API_KEY`：走 Anthropic 时必填
+- `BIG_MODEL`：用于映射 Claude Sonnet 类请求的后端模型
+- `SMALL_MODEL`：用于映射 Claude Haiku 类请求的后端模型
+- `UNSUPPORTED_THINKING_BEHAVIOR`：非 Anthropic 后端遇到 `thinking` 时的处理策略
+
+### Vertex AI 相关配置
+
+如果你走 Vertex AI 认证模式，可以额外配置：
+
+- `USE_VERTEX_AUTH=true`
+- `VERTEX_PROJECT=your-project-id`
+- `VERTEX_LOCATION=us-central1`
+
+## 工具兼容性
+
+项目当前已经支持 Claude Code 常见的工具协议转换，包括：
+
+- Anthropic `tool_use`
+- Anthropic `tool_result`
+- OpenAI 风格的 `tool_calls`
+- 多轮工具调用后的继续推理
+
+详细兼容性边界和显式报错策略见：
+
+- [兼容性说明](docs/compatibility.md)
+
+## 测试
+
+运行当前的协议与兼容性回归测试：
+
+```bash
+python -m unittest test_protocol_conversion.py
+```
+
+当前测试覆盖包括：
+
+- `tool_result -> tool` 消息转换
+- `tool_calls -> tool_use` 响应转换
+- 非法 `tool_choice` 显式报错
+- `user` 消息错误携带 `tool_use` 显式报错
+- OpenAI-compatible 图像输入显式报错
+- Gemini 不兼容 tool schema 显式报错
+- OpenAI / Gemini / Anthropic adapter 基础路径
+
 ## 常见问题
 
 ### 1. Claude Code 没有走本地代理
@@ -275,84 +355,45 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY=dummy-key claude
 
 这通常和具体后端平台的 OpenAI-compatible 支持程度有关。即使文本对话正常，不同平台对 function calling 的支持也可能不完全一致。
 
-## 配置说明
+### 4. 为什么某些后端默认不支持 `thinking`
 
-### 核心环境变量
+Anthropic 的 `thinking` 是协议专有能力，不等价于所有其他后端的推理增强参数。为了避免错误映射，项目默认对不支持的后端显式报错。
 
-- `PREFERRED_PROVIDER`：可选 `openai`、`google`、`anthropic`
-- `OPENAI_API_KEY`：OpenAI-compatible 后端必填
-- `OPENAI_BASE_URL`：自定义 OpenAI-compatible 接口地址
-- `GEMINI_API_KEY`：Gemini API 模式下必填
-- `ANTHROPIC_API_KEY`：直接代理 Anthropic 时必填
-- `BIG_MODEL`：用于映射 Claude Sonnet 类请求的后端模型
-- `SMALL_MODEL`：用于映射 Claude Haiku 类请求的后端模型
+如果你更希望“尽量继续请求”，可以设置：
 
-### Vertex AI 相关配置
-
-如果你走 Vertex AI 认证模式，可以额外配置：
-
-- `USE_VERTEX_AUTH=true`
-- `VERTEX_PROJECT=your-project-id`
-- `VERTEX_LOCATION=us-central1`
-
-## 模型映射逻辑
-
-项目会把 Claude 风格的模型请求映射到你实际配置的后端模型。
-
-默认思路是：
-
-- `haiku` -> `SMALL_MODEL`
-- `sonnet` -> `BIG_MODEL`
-
-当 `PREFERRED_PROVIDER=openai` 时，会以 `openai/<model>` 的形式发给后端。
-
-当 `PREFERRED_PROVIDER=google` 时，如果识别为 Gemini 模型，会以 `gemini/<model>` 的形式发给后端。
-
-当 `PREFERRED_PROVIDER=anthropic` 时，不再映射到其他厂商，而是直接走 Anthropic。
-
-## 工具调用兼容性
-
-本项目不只是做普通文本转发，也会处理 Claude Code 常见的工具调用协议转换，包括：
-
-- Anthropic 的 `tool_use`
-- Anthropic 的 `tool_result`
-- OpenAI 风格的 `tool_calls`
-- 多轮工具调用后的继续推理
-
-不过需要注意：
-
-- 后端是否真正支持 function calling，取决于具体模型和平台
-- 即使是 OpenAI-compatible 接口，不同平台对工具调用字段的兼容程度也可能不同
-- 某些 Claude 原生能力，仍然可能需要后续继续做专门适配
-
-## 工作原理
-
-整个流程大致如下：
-
-1. 客户端向 `/v1/messages` 发送 Anthropic 格式请求
-2. 代理将请求转换为 LiteLLM 可处理的格式
-3. LiteLLM 将请求转发到你选择的后端
-4. 后端返回结果后，代理再把响应转换回 Anthropic 兼容格式
-5. Claude Code 继续按 Anthropic 协议与代理交互
-
-## 开发说明
-
-- 主要逻辑在 `server.py`
-- 基础协议回归测试在 `test_protocol_conversion.py`
-- 当前阶段重点是协议兼容和本地可用性，不强调打包分发
-
-## 测试
-
-运行轻量协议测试：
-
-```bash
-python -m unittest test_protocol_conversion.py
+```dotenv
+UNSUPPORTED_THINKING_BEHAVIOR=drop
 ```
 
-## 已知限制
+这样代理会自动忽略该字段，而不是直接失败。
 
-- 兼容性会受到目标平台对 OpenAI 或 Gemini 协议实现质量的影响
-- **某些 Claude Code 工具场景仍可能需要继续补适配**
+## 未来蓝图
+
+Claude Anywhere 后续准备继续沿这些方向演进：
+
+### 1. 更细粒度的 provider adapter
+
+当前已经有 adapter 结构，后续会继续按 provider 特性拆分，让不同平台的行为差异更可控。
+
+### 2. 更完整的能力矩阵
+
+目前能力矩阵已覆盖 `thinking`、`top_k`、图片输入和 Gemini schema 规则，后续会继续扩展到：
+
+- 流式 tool call 细节
+- 不同后端的 reasoning 参数映射
+- 更精细的工具 schema 支持声明
+
+### 3. 更真实的 Claude Code 回归测试
+
+后续会继续增加：
+
+- 多工具并行
+- 流式 tool 参数增量输出
+- 更贴近 shell / file / search 场景的工具 schema
+
+### 4. 更清晰的兼容性文档
+
+后续会持续更新已验证的平台、模型和已知限制，让使用者在接入前就能快速判断适配风险。
 
 ## 适用场景
 
@@ -365,7 +406,7 @@ python -m unittest test_protocol_conversion.py
 
 ## 贡献
 
-欢迎提 Issue 或 PR，尤其是这几个方向：
+欢迎提 Issue 或 PR，尤其是这些方向：
 
 - 工具调用兼容性
 - 不同后端平台的协议适配
