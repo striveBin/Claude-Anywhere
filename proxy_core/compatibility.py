@@ -1,7 +1,7 @@
 from typing import Any, List
 
 from proxy_core.capabilities import get_backend_capabilities
-from proxy_core.config import UNSUPPORTED_THINKING_BEHAVIOR
+from proxy_core.config import THINKING_TO_REASONING_EFFORT, UNSUPPORTED_THINKING_BEHAVIOR
 from proxy_core.models import MessagesRequest
 
 
@@ -41,10 +41,17 @@ def validate_request_compatibility(anthropic_request: MessagesRequest) -> None:
     if anthropic_request.thinking and not capabilities.supports_thinking:
         if UNSUPPORTED_THINKING_BEHAVIOR == "drop":
             anthropic_request.thinking = None
+        elif UNSUPPORTED_THINKING_BEHAVIOR == "map":
+            if not capabilities.supports_reasoning_effort:
+                raise RequestCompatibilityError(
+                    f"The 'thinking' option cannot be mapped for {capabilities.family} backends. "
+                    "Use UNSUPPORTED_THINKING_BEHAVIOR=drop or switch to a backend with reasoning mapping support."
+                )
         else:
             raise RequestCompatibilityError(
                 "The 'thinking' option is only supported when proxying to Anthropic models. "
-                "Set UNSUPPORTED_THINKING_BEHAVIOR=drop to ignore it automatically."
+                "Set UNSUPPORTED_THINKING_BEHAVIOR=drop to ignore it automatically, "
+                f"or UNSUPPORTED_THINKING_BEHAVIOR=map to map it to reasoning_effort={THINKING_TO_REASONING_EFFORT} when supported."
             )
 
     if anthropic_request.top_k is not None and not capabilities.supports_top_k:

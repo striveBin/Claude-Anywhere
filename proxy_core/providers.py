@@ -2,6 +2,9 @@ import json
 import logging
 from typing import Any, Dict
 
+import httpx
+import openai
+
 from proxy_core.config import (
     ANTHROPIC_API_KEY,
     GEMINI_API_KEY,
@@ -13,6 +16,31 @@ from proxy_core.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+_sync_openai_clients: Dict[str, openai.OpenAI] = {}
+_async_openai_clients: Dict[str, openai.AsyncOpenAI] = {}
+
+
+def get_openai_sync_client(api_key: str | None, base_url: str | None) -> openai.OpenAI:
+    cache_key = f"{base_url or 'default'}::{api_key or ''}"
+    if cache_key not in _sync_openai_clients:
+        _sync_openai_clients[cache_key] = openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            http_client=httpx.Client(trust_env=False),
+        )
+    return _sync_openai_clients[cache_key]
+
+
+def get_openai_async_client(api_key: str | None, base_url: str | None) -> openai.AsyncOpenAI:
+    cache_key = f"{base_url or 'default'}::{api_key or ''}"
+    if cache_key not in _async_openai_clients:
+        _async_openai_clients[cache_key] = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            http_client=httpx.AsyncClient(trust_env=False),
+        )
+    return _async_openai_clients[cache_key]
 
 
 def apply_provider_auth(litellm_request: Dict[str, Any], request_model: str) -> None:

@@ -24,9 +24,15 @@ Claude Anywhere 的目标不是“尽量偷偷兜底”，而是：
 
 当前限制：
 
-- 不支持 Anthropic `thinking`
+- 默认不支持 Anthropic `thinking`
 - 不支持 `top_k`
 - 当前代理层不支持 image content block 透传，会显式报错
+
+可选策略：
+
+- 当设置 `UNSUPPORTED_THINKING_BEHAVIOR=map` 时，OpenAI-compatible 路径可以尝试把 Anthropic `thinking` 映射到 `reasoning_effort`
+- 映射值由 `THINKING_TO_REASONING_EFFORT` 控制，默认是 `low`
+- 这是近似映射，不保证与 Anthropic 原生 `thinking` 完全等价
 
 ### Gemini
 
@@ -46,7 +52,7 @@ Claude Anywhere 的目标不是“尽量偷偷兜底”，而是：
 
 - `additionalProperties`
 - `default`
-- 某些不被当前适配层接受的 `format`
+- 某些当前适配层不接受的 `format`
 
 ### Anthropic
 
@@ -86,9 +92,9 @@ Claude Anywhere 的目标不是“尽量偷偷兜底”，而是：
 - `tool_calls -> tool_use` 响应转换
 - 非法 `tool_choice` 显式报错
 - `user` 消息错误携带 `tool_use` 显式报错
-- OpenAI-compatible 图像输入显式报错
+- OpenAI-compatible 图片输入显式报错
 - Gemini 不兼容 tool schema 显式报错
-- OpenAI/Gemini/Anthropic adapter 基础路径
+- OpenAI / Gemini / Anthropic adapter 基础路径
 - `/v1/messages` 接口级 `400` 返回
 
 ## 尚未完整覆盖的场景

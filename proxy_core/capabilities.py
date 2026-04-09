@@ -9,6 +9,7 @@ class BackendCapabilities:
     supports_top_k: bool
     supports_image_input: bool
     enforces_gemini_tool_schema_rules: bool
+    supports_reasoning_effort: bool
 
 
 BACKEND_CAPABILITIES: Dict[str, BackendCapabilities] = {
@@ -18,6 +19,7 @@ BACKEND_CAPABILITIES: Dict[str, BackendCapabilities] = {
         supports_top_k=False,
         supports_image_input=False,
         enforces_gemini_tool_schema_rules=False,
+        supports_reasoning_effort=True,
     ),
     "gemini": BackendCapabilities(
         family="gemini",
@@ -25,6 +27,7 @@ BACKEND_CAPABILITIES: Dict[str, BackendCapabilities] = {
         supports_top_k=False,
         supports_image_input=True,
         enforces_gemini_tool_schema_rules=True,
+        supports_reasoning_effort=False,
     ),
     "anthropic": BackendCapabilities(
         family="anthropic",
@@ -32,6 +35,7 @@ BACKEND_CAPABILITIES: Dict[str, BackendCapabilities] = {
         supports_top_k=True,
         supports_image_input=True,
         enforces_gemini_tool_schema_rules=False,
+        supports_reasoning_effort=False,
     ),
     "unknown": BackendCapabilities(
         family="unknown",
@@ -39,6 +43,7 @@ BACKEND_CAPABILITIES: Dict[str, BackendCapabilities] = {
         supports_top_k=False,
         supports_image_input=False,
         enforces_gemini_tool_schema_rules=False,
+        supports_reasoning_effort=False,
     ),
 }
 

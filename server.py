@@ -29,6 +29,7 @@ from proxy_core.models import (
     Tool,
     Usage,
 )
+from proxy_core.providers import get_openai_async_client, get_openai_sync_client
 from proxy_core.streaming import handle_streaming
 
 load_dotenv()
@@ -115,10 +116,20 @@ async def create_message(request: MessagesRequest, raw_request: Request):
         )
 
         if request.stream:
+            if litellm_request.get("model", "").startswith("openai/"):
+                litellm_request["client"] = get_openai_async_client(
+                    litellm_request.get("api_key"),
+                    litellm_request.get("api_base") or litellm_request.get("base_url"),
+                )
             response_generator = await litellm.acompletion(**litellm_request)
             return StreamingResponse(handle_streaming(response_generator, request), media_type="text/event-stream")
 
         start_time = time.time()
+        if litellm_request.get("model", "").startswith("openai/"):
+            litellm_request["client"] = get_openai_sync_client(
+                litellm_request.get("api_key"),
+                litellm_request.get("api_base") or litellm_request.get("base_url"),
+            )
         litellm_response = litellm.completion(**litellm_request)
         logger.debug(f"RESPONSE RECEIVED: Model={litellm_request.get('model')}, Time={time.time() - start_time:.2f}s")
         return convert_litellm_to_anthropic(litellm_response, request)

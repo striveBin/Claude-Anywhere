@@ -14,6 +14,7 @@ USE_VERTEX_AUTH = os.environ.get("USE_VERTEX_AUTH", "False").lower() == "true"
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
 PREFERRED_PROVIDER = os.environ.get("PREFERRED_PROVIDER", "openai").lower()
 UNSUPPORTED_THINKING_BEHAVIOR = os.environ.get("UNSUPPORTED_THINKING_BEHAVIOR", "error").lower()
+THINKING_TO_REASONING_EFFORT = os.environ.get("THINKING_TO_REASONING_EFFORT", "low").lower()
 
 BIG_MODEL = os.environ.get("BIG_MODEL", "gpt-4.1")
 SMALL_MODEL = os.environ.get("SMALL_MODEL", "gpt-4.1-mini")
